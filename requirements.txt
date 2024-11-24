@@ -1,0 +1,8 @@
+flask>=2.0.1
+moviepy>=1.0.3
+requests>=2.26.0
+proglog>=0.1.9
+httpx>=0.24.0
+pycryptodome==3.9.9
+volcengine-python-sdk[ark]>=1.0.106
+python-dotenv>=1.0.0 

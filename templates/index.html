@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>语音转字幕 {{version}}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background-color: #f5f7fa;
+            color: #2c3e50;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #3498db;
+            margin-bottom: 30px;
+            font-size: 2em;
+        }
+
+        .upload-area {
+            border: 2px dashed #bdc3c7;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+        }
+
+        .upload-area:hover {
+            border-color: #3498db;
+            background-color: #f7f9fc;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .upload-btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #3498db;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            font-size: 1em;
+            border: none;
+        }
+
+        .upload-btn:hover {
+            background-color: #2980b9;
+        }
+
+        .progress-container {
+            margin: 30px 0;
+            padding: 20px;
+            border-radius: 8px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            display: none;
+        }
+
+        .progress-container h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .status {
+            margin: 10px 0;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 0.95em;
+            transition: all 0.3s ease;
+        }
+
+        .status.pending {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            border-left: 4px solid #28a745;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+        }
+
+        #downloadLink {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        #downloadLink a {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #2ecc71;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            transition: background-color 0.3s ease;
+        }
+
+        #downloadLink a:hover {
+            background-color: #27ae60;
+        }
+
+        .file-name {
+            margin: 10px 0;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .file-info {
+            margin-top: 10px;
+            color: #666;
+            font-size: 0.9em;
+            text-align: center;
+        }
+
+        .progress-info {
+            margin: 10px 0;
+            text-align: center;
+            color: #666;
+        }
+
+        #progress-container {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>语音转字幕 {{version}}</h1>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="upload-area">
+                <div class="upload-icon">📁</div>
+                <input type="file" id="fileInput" name="file" 
+                    accept="audio/mp3,video/mp4,video/x-m4v,video/*" required>
+                <label for="fileInput" class="upload-btn">
+                    选择文件
+                </label>
+                <div id="fileName" class="file-name">未选择文件</div>
+
+                <div class="file-info">
+                    支持的格式：MP3, MP4, AVI, MOV, MKV, FLV, WMV<br>
+                    最大文件大小：16MB
+                </div>
+            </div>
+            <div style="text-align: center;">
+                <button type="submit" class="upload-btn">开始转换</button>
+            </div>
+        </form>
+        
+        <div id="progress-container" class="progress-container">
+            <h3>处理进度</h3>
+            <div id="upload-status" class="status"></div>
+            <div id="recognition-status" class="status"></div>
+            <div id="correction-status" class="status"></div>
+            <div id="subtitle-status" class="status"></div>
+        </div>
+        
+        <div id="downloadLink"></div>
+    </div>
+
+    <script>
+        // 更新状态显示函数
+        const updateStatus = (elementId, message, type = 'pending') => {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = message;
+                element.className = `status ${type}`;
+            }
+        };
+
+        // 添加字幕生成函数
+        async function startSubtitleGeneration(taskId) {
+            try {
+                // 开始轮询检查状态
+                while (true) {
+                    const response = await fetch(`/status/${taskId}`);
+                    const result = await response.json();
+                    
+                    if (result.status === 'recognizing') {
+                        updateStatus('recognition-status', '正在进行语音识别...', 'pending');
+                        await new Promise(resolve => setTimeout(resolve, 2000)); // 等待2秒再次检查
+                        continue;
+                    }
+                    
+                    if (result.status === 'optimizing') {
+                        updateStatus('recognition-status', '语音识别完成', 'success');
+                        updateStatus('correction-status', '正在进行文本优化...', 'pending');
+                        
+                        // 开始文本优化
+                        const optimizeResponse = await fetch(`/optimize/${taskId}`);
+                        const optimizeResult = await optimizeResponse.json();
+                        
+                        if (optimizeResult.status === 'completed') {
+                            updateStatus('correction-status', '文本优化完成', 'success');
+                            updateStatus('subtitle-status', '字幕生成完成', 'success');
+                            
+                            // 显示下载链接
+                            document.getElementById('downloadLink').innerHTML = 
+                                `<a href="${optimizeResult.subtitle_file}" download>下载字幕文件</a>`;
+                            break;
+                        }
+                    }
+                    
+                    if (result.status === 'failed') {
+                        throw new Error(result.error || '处理失败');
+                    }
+                }
+            } catch (error) {
+                updateStatus('subtitle-status', `处理失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 文件选择处理
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const fileName = file.name;
+                const fileSize = (file.size / (1024 * 1024)).toFixed(2); // MB
+                document.getElementById('fileName').textContent = 
+                    `${fileName} (${fileSize}MB)`;
+                
+                if (file.size > 500 * 1024 * 1024) {
+                    alert('文件大小超过500MB限制，请选择较小的文件。');
+                    this.value = '';
+                    document.getElementById('fileName').textContent = '未选择文件';
+                }
+            }
+        });
+
+        // 表单提交处理
+        document.getElementById('uploadForm').onsubmit = async function(event) {
+            event.preventDefault();
+            
+            // 显示进度容器
+            const progressContainer = document.getElementById('progress-container');
+            progressContainer.style.display = 'block';
+            
+            // 清除之前的下载链接
+            document.getElementById('downloadLink').innerHTML = '';
+            
+            try {
+                updateStatus('upload-status', '正在上传文件...', 'pending');
+                
+                const formData = new FormData(this);
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || '上传失败');
+                }
+
+                const result = await response.json();
+                
+                if (result.status === 'processing') {
+                    updateStatus('upload-status', '文件上传成功', 'success');
+                    startSubtitleGeneration(result.task_id);
+                }
+            } catch (error) {
+                updateStatus('subtitle-status', `处理失败: ${error.message}`, 'error');
+            }
+        };
+    </script>
+</body>
+</html>
